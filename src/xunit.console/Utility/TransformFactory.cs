@@ -70,8 +70,24 @@ namespace Xunit.ConsoleClient
                 xmlTransform.Transform(xmlReader, writer);
             }
 #else
+            //Console.ForegroundColor = ConsoleColor.Yellow;
+            //Console.WriteLine($"Skipping -{key} because XSL-T is not supported on .NET Core");
+            //Console.ResetColor();
+
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine($"Skipping -{key} because XSL-T is not supported on .NET Core");
+
+            var factory = new LinqTransformerFactory();
+            var linqTransformer = factory.Create(resourceName);
+
+            if (linqTransformer == null)
+            {
+                Console.WriteLine($"Skipping -{key} because Transform is not yet supported on .NET Core");
+            }
+            else
+            {
+                linqTransformer.Transform(xml, outputFileName);
+            }
+
             Console.ResetColor();
 #endif
         }
