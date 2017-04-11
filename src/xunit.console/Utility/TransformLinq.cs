@@ -24,7 +24,7 @@ namespace Xunit.ConsoleClient
             {
                 { "HTML.xslt", new XUnit2RunnerHtmlResultTransformer() },
                 { "NUnitXml.xslt", new XUnit2RunnerNUnitXmlResultTransformer() },
-                //{ "xUnit1.xslt", new XUnit2RunnerXmlv1ResultTransformer() }
+                { "xUnit1.xslt", new XUnit2RunnerXmlv1ResultTransformer() }
             }; 
         }
 
@@ -258,9 +258,150 @@ namespace Xunit.ConsoleClient
     {
         public void Transform(XElement xml, string outputFileName)
         {
-            // TODO - do transform first
-            using (var stream = File.OpenWrite(outputFileName))
-                xml.Save(stream);
+            var xmlSerializerHelper = new XmlSerializerHelper();
+
+            var xUnit2RunnerResult = xmlSerializerHelper.Deserialize<XUnit2RunnerResult>(xml.ToString());
+
+            var xUnitV1RunnerResult = MapToXUnitV1RunnerResult(xUnit2RunnerResult);
+
+            var xUnitV1RunnerResultXml = xmlSerializerHelper.Serialize(xUnitV1RunnerResult);
+
+            File.WriteAllText(outputFileName, xUnitV1RunnerResultXml, Encoding.UTF8);
+        }
+
+        public XUnitV1RunnerResult MapToXUnitV1RunnerResult(XUnit2RunnerResult xUnit2RunnerResult)
+        {
+            var assemblyItems = xUnit2RunnerResult.AssemblyItems;
+            var firstAssemblyItem = xUnit2RunnerResult.AssemblyItems.First();
+
+            var success = assemblyItems.Sum(ai => ai.Failed) == 0;
+            var result = success ? "Success" : "Failure";
+
+            return new XUnitV1RunnerResult
+            {
+                //Name = "Test results",
+
+                //Date = firstAssemblyItem.RunDate,
+                //Time = firstAssemblyItem.RunTime,
+
+                //Total = assemblyItems.Sum(ai => ai.Total),
+                //Failures = assemblyItems.Sum(ai => ai.Failed),
+                //Skipped = assemblyItems.Sum(ai => ai.Skipped),
+
+                //Environment = new NUnitRunnerResultEnvironment
+                //{
+                //    OSVersion = "unknown",
+                //    Platform = "unknown",
+                //    Cwd = "unknown",
+                //    MachineName = "unknown",
+                //    User = "unknown",
+                //    UserDomain = "unknown",
+                //    NUnitVersion = firstAssemblyItem.TestFramework,
+                //    ClrVersion = firstAssemblyItem.Environment
+                //},
+
+                //CultureInfo = new NUnitRunnerResultCultureInfo
+                //{
+                //    CurrentCulture = "unknown",
+                //    CurrentUICulture = "unknown"
+                //},
+
+                //TestSuite = new NUnitRunnerResultTestSuite
+                //{
+                //    Type = "Assemblies",
+                //    Name = "xUnit.net Tests",
+                //    Executed = true,
+
+                //    Success = success,
+                //    ResultText = result,
+
+                //    Time = assemblyItems.Sum(ai => ai.Time),
+
+                //    TestSuiteOrCaseResults = new TestSuiteOrCaseResults
+                //    {
+                //        TestSuiteResults = MapToAssembliesTestSuites(assemblyItems).ToList()
+                //    }
+                //}
+
+                AssemblyItems = MapToAssemblies(assemblyItems).ToList()
+            };
+        }
+
+        private IEnumerable<XUnitV1RunnerResultAssembly> MapToAssemblies(
+                IEnumerable<XUnit2RunnerResultAssembly> xUnit2RunnerResultAssemblies)
+        {
+            return xUnit2RunnerResultAssemblies.Select(a => MapToAssembly(a));
+        }
+
+        private XUnitV1RunnerResultAssembly MapToAssembly(XUnit2RunnerResultAssembly xUnit2RunnerResultAssembly)
+        {
+            var success = xUnit2RunnerResultAssembly.Failed == 0;
+            var resultText = success ? "Success" : "Failure";
+
+            return new XUnitV1RunnerResultAssembly
+            {
+                Name = xUnit2RunnerResultAssembly.Name,
+                ConfigFile = xUnit2RunnerResultAssembly.ConfigFile,
+
+                RunDate = xUnit2RunnerResultAssembly.RunDate,
+                RunTime = xUnit2RunnerResultAssembly.RunTime,
+                Time = xUnit2RunnerResultAssembly.Time,
+
+                Total = xUnit2RunnerResultAssembly.Total,
+                Passed = xUnit2RunnerResultAssembly.Passed,
+                Failed = xUnit2RunnerResultAssembly.Failed,
+                Skipped = xUnit2RunnerResultAssembly.Skipped,
+
+                Environment = xUnit2RunnerResultAssembly.Environment,
+                TestFramework = xUnit2RunnerResultAssembly.TestFramework,
+
+                Classes = MapToClasses(xUnit2RunnerResultAssembly.Collections).ToList()
+            };
+        }
+
+        private IEnumerable<XUnitV1RunnerResultClass> MapToClasses(
+            IEnumerable<XUnit2RunnerResultCollection> xUnit2RunnerResultCollections)
+        {
+            return xUnit2RunnerResultCollections.Select(c => MapToClass(c));
+        }
+
+        private XUnitV1RunnerResultClass MapToClass(XUnit2RunnerResultCollection xUnit2RunnerResultCollection)
+        {
+            return new XUnitV1RunnerResultClass
+            {
+                Name = xUnit2RunnerResultCollection.Name,
+
+                Time = xUnit2RunnerResultCollection.Tests.Sum(t => t.Time).ToString("0.000"),
+                Total = xUnit2RunnerResultCollection.Tests.Count(),
+                Passed = xUnit2RunnerResultCollection.Tests.Count(t => t.Result == "Pass"),
+                Failed = xUnit2RunnerResultCollection.Tests.Count(t => t.Result == "Fail"),
+                Skipped = xUnit2RunnerResultCollection.Tests.Count(t => t.Result == "Skip"),
+
+                Tests = MapToTests(xUnit2RunnerResultCollection.Tests.OrderBy(t => t.Type).ThenBy(t => t.Name)).ToList()
+            };
+        }
+
+        private IEnumerable<XUnitV1RunnerResultTest> MapToTests(
+            IEnumerable<XUnit2RunnerResultTest> xUnit2RunnerResultTests)
+        {
+            return xUnit2RunnerResultTests.Select(t => MapToTest(t));
+        }
+
+        private XUnitV1RunnerResultTest MapToTest(XUnit2RunnerResultTest xUnit2RunnerResultTest)
+        {
+            return new XUnitV1RunnerResultTest
+            {
+                Name = xUnit2RunnerResultTest.Name,
+                Type = xUnit2RunnerResultTest.Type,
+                Method = xUnit2RunnerResultTest.Method,
+                Result = xUnit2RunnerResultTest.Result,
+                Time = xUnit2RunnerResultTest.Time,
+
+                Reason = xUnit2RunnerResultTest.Reason == null ? null : new XUnitV1RunnerResultTestReason { Message = xUnit2RunnerResultTest.Reason.Value },
+
+                Failure = xUnit2RunnerResultTest.Failure,
+                Traits = xUnit2RunnerResultTest.Traits != null && xUnit2RunnerResultTest.Traits.Any() ? xUnit2RunnerResultTest.Traits : null
+            };
         }
     }
 
@@ -1237,5 +1378,177 @@ namespace Xunit.ConsoleClient
 
         [XmlElement("stack-trace")]
         public string StackTrace { get; set; }
+    }
+
+    // XUnitV1
+    [XmlRoot("assemblies")]
+    public class XUnitV1RunnerResult
+    {
+        [XmlElement("assembly")]
+        public List<XUnitV1RunnerResultAssembly> AssemblyItems { get; set; } = new List<XUnitV1RunnerResultAssembly> { };
+    }
+
+
+    public class XUnitV1RunnerResultAssembly
+    {
+        /*
+          <xsl:attribute name="name"><xsl:value-of select="@name"/></xsl:attribute>
+          <xsl:attribute name="configFile"><xsl:value-of select="@config-file"/></xsl:attribute>
+          <xsl:attribute name="run-date"><xsl:value-of select="@run-date"/></xsl:attribute>
+          <xsl:attribute name="run-time"><xsl:value-of select="@run-time"/></xsl:attribute>
+          <xsl:attribute name="time"><xsl:value-of select="@time"/></xsl:attribute>
+          <xsl:attribute name="total"><xsl:value-of select="@total"/></xsl:attribute>
+          <xsl:attribute name="passed"><xsl:value-of select="@passed"/></xsl:attribute>
+          <xsl:attribute name="failed"><xsl:value-of select="@failed"/></xsl:attribute>
+          <xsl:attribute name="skipped"><xsl:value-of select="@skipped"/></xsl:attribute>
+          <xsl:attribute name="environment"><xsl:value-of select="@environment"/></xsl:attribute>
+          <xsl:attribute name="test-framework"><xsl:value-of select="@test-framework"/></xsl:attribute>
+        */
+        [XmlAttribute("name")]
+        public string Name { get; set; }
+
+        [XmlAttribute("configFile")]
+        public string ConfigFile { get; set; }
+
+        [XmlAttribute("run-date")]
+        public string RunDate { get; set; }
+
+        [XmlAttribute("run-time")]
+        public string RunTime { get; set; }
+
+        [XmlAttribute("time")]
+        public decimal Time { get; set; }
+
+        [XmlAttribute("total")]
+        public int Total { get; set; }
+
+        [XmlAttribute("passed")]
+        public int Passed { get; set; }
+
+        [XmlAttribute("failed")]
+        public int Failed { get; set; }
+
+        [XmlAttribute("skipped")]
+        public int Skipped { get; set; }
+
+        [XmlAttribute("test-framework")]
+        public string TestFramework { get; set; }
+
+        [XmlAttribute("environment")]
+        public string Environment { get; set; }
+
+        //[XmlAttribute("errors")]
+        //public int ErrorCount { get; set; }
+
+        //// [XmlElement("errors")]
+        //[XmlArray("errors")]
+        //[XmlArrayItem("error")]
+        //public List<XUnit2RunnerResultError> Errors { get; set; } = new List<XUnit2RunnerResultError> { };
+
+        [XmlElement("class")]
+        public List<XUnitV1RunnerResultClass> Classes { get; set; } = new List<XUnitV1RunnerResultClass> { };
+    }
+
+    public class XUnitV1RunnerResultClass
+    {
+        /* 
+              <xsl:attribute name="name"><xsl:value-of select="@type"/></xsl:attribute>
+              <xsl:attribute name="time"><xsl:value-of select="format-number(sum(key('tests-by-class', @type)/@time), '0.000')"/></xsl:attribute>
+              <xsl:attribute name="total"><xsl:value-of select="count(key('tests-by-class', @type))"/></xsl:attribute>
+              <xsl:attribute name="passed"><xsl:value-of select="count(key('tests-by-class', @type)[@result='Pass'])"/></xsl:attribute>
+              <xsl:attribute name="failed"><xsl:value-of select="count(key('tests-by-class', @type)[@result='Fail'])"/></xsl:attribute>
+              <xsl:attribute name="skipped"><xsl:value-of select="count(key('tests-by-class', @type)[@result='Skip'])"/></xsl:attribute>
+        */
+
+        [XmlAttribute("name")]
+        public string Name { get; set; }
+
+        [XmlAttribute("time")]
+        public string Time { get; set; }
+
+        [XmlAttribute("total")]
+        public int Total { get; set; }
+
+        [XmlAttribute("passed")]
+        public int Passed { get; set; }
+
+        [XmlAttribute("failed")]
+        public int Failed { get; set; }
+
+        [XmlAttribute("skipped")]
+        public int Skipped { get; set; }
+
+        //// NUnitXml.xslt - Line 92
+        //// https://xunit.github.io/docs/format-xml-v2.html#collection
+        ////[XmlIgnore()]
+        //public XUnit2RunnerResultFailure Failure { get; set; }
+
+        //// NUnitXml.xslt - Line 95
+        //// https://xunit.github.io/docs/format-xml-v2.html#collection
+        ////[XmlIgnore()]
+        //public string Reason { get; set; }
+
+        [XmlElement("test")]
+        public List<XUnitV1RunnerResultTest> Tests { get; set; } = new List<XUnitV1RunnerResultTest> { };
+    }
+
+    public class XUnitV1RunnerResultTest
+    {
+        /*
+                  <xsl:attribute name="name"><xsl:value-of select="@name"/></xsl:attribute>
+                  <xsl:attribute name="type"><xsl:value-of select="@type"/></xsl:attribute>
+                  <xsl:attribute name="method"><xsl:value-of select="@method"/></xsl:attribute>
+                  <xsl:attribute name="result"><xsl:value-of select="@result"/></xsl:attribute>
+                  <xsl:attribute name="time"><xsl:value-of select="@time"/></xsl:attribute>
+        */
+
+        private XUnit2RunnerResultFailure _failure;
+
+        [XmlAttribute("name")]
+        public string Name { get; set; }
+
+        [XmlAttribute("type")]
+        public string Type { get; set; }
+
+        [XmlAttribute("method")]
+        public string Method { get; set; }
+
+        [XmlAttribute("result")]
+        public string Result { get; set; }
+
+        [XmlAttribute("time")]
+        public decimal Time { get; set; }
+
+        [XmlElement("reason")]
+        public XUnitV1RunnerResultTestReason Reason { get; set; }
+
+        //[XmlElement("output")]
+        //public string Output { get; set; }
+
+        [XmlElement("failure")]
+        public XUnit2RunnerResultFailure Failure
+        {
+            get { return _failure; }
+
+            set
+            {
+                _failure = value;
+
+                if (_failure != null)
+                {
+                    _failure.ParentErrorName = this.Name;
+                }
+            }
+        }
+
+        [XmlArray("traits")]
+        [XmlArrayItem("trait")]
+        public List<XUnit2RunnerResultTrait> Traits { get; set; } = new List<XUnit2RunnerResultTrait> { };
+    }
+
+    public class XUnitV1RunnerResultTestReason
+    {
+        [XmlElement("message")]
+        public string Message { get; set; }
     }
 }
